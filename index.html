@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>EmojiBlend ✦ Team PPG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=Syne+Mono&family=DM+Sans:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<style>
+  :root {
+    --ink:     #0a0a0f;
+    --paper:   #f5f0e8;
+    --cream:   #ede8dc;
+    --accent:  #ff3c5f;
+    --accent2: #7b2fff;
+    --gold:    #f5a623;
+    --mono:    'Syne Mono', monospace;
+    --sans:    'DM Sans', sans-serif;
+    --display: 'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+    cursor: none;
+  }
+
+  /* ── Custom cursor ── */
+  #cursor {
+    width: 12px; height: 12px;
+    background: var(--accent);
+    border-radius: 50%;
+    position: fixed; top: 0; left: 0;
+    pointer-events: none; z-index: 9999;
+    transform: translate(-50%, -50%);
+    transition: transform 0.1s, background 0.2s;
+    mix-blend-mode: multiply;
+  }
+  #cursor-ring {
+    width: 36px; height: 36px;
+    border: 1.5px solid var(--ink);
+    border-radius: 50%;
+    position: fixed; top: 0; left: 0;
+    pointer-events: none; z-index: 9998;
+    transform: translate(-50%, -50%);
+    transition: transform 0.18s ease, width 0.2s, height 0.2s;
+  }
+
+  /* ── Noise texture overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0; opacity: 0.5;
+  }
+
+  /* ── Layout ── */
+  .page { position: relative; z-index: 1; }
+
+  /* ── Header ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 2rem 4rem;
+    border-bottom: 1.5px solid var(--ink);
+  }
+  .logo {
+    font-family: var(--display);
+    font-weight: 800; font-size: 1.5rem;
+    letter-spacing: -0.03em;
+  }
+  .logo span { color: var(--accent); }
+  .tag {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    background: var(--ink); color: var(--paper);
+    padding: 0.3rem 0.8rem;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── Hero ── */
+  .hero {
+    padding: 5rem 4rem 3rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    align-items: end;
+    border-bottom: 1.5px solid var(--ink);
+  }
+  .hero-title {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: clamp(3.5rem, 8vw, 7rem);
+    line-height: 0.95;
+    letter-spacing: -0.04em;
+  }
+  .hero-title .line2 { color: var(--accent); }
+  .hero-title .line3 {
+    -webkit-text-stroke: 2px var(--ink);
+    color: transparent;
+  }
+  .hero-desc {
+    font-size: 1rem;
+    line-height: 1.7;
+    color: #444;
+    max-width: 380px;
+    align-self: end;
+  }
+  .hero-desc strong { color: var(--ink); font-weight: 400; font-style: italic; }
+
+  /* ── Main workspace ── */
+  .workspace {
+    padding: 3rem 4rem;
+    display: grid;
+    grid-template-columns: 1fr 60px 1fr;
+    gap: 0;
+    border-bottom: 1.5px solid var(--ink);
+  }
+
+  .panel {
+    padding: 2rem;
+    border-right: 1.5px solid var(--ink);
+  }
+  .panel:last-child { border-right: none; }
+  .panel-label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1.2rem;
+  }
+
+  /* Emoji search */
+  .search-wrap { position: relative; margin-bottom: 1rem; }
+  .search-wrap input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1.5px solid var(--ink);
+    background: transparent;
+    font-family: var(--sans);
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .search-wrap input:focus { border-color: var(--accent); }
+  .search-wrap input::placeholder { color: #aaa; }
+
+  .emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1.5px solid var(--ink);
+    padding: 0.5rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--ink) transparent;
+  }
+  .emoji-btn {
+    aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem;
+    border: 1.5px solid transparent;
+    background: transparent;
+    cursor: none;
+    transition: all 0.15s;
+    position: relative;
+  }
+  .emoji-btn:hover { background: var(--cream); border-color: var(--ink); }
+  .emoji-btn.selected {
+    background: var(--ink); border-color: var(--ink);
+    filter: invert(1) hue-rotate(180deg);
+  }
+
+  /* Selected preview */
+  .selected-preview {
+    margin-top: 1.2rem;
+    display: flex; align-items: center; gap: 1rem;
+  }
+  .preview-emoji {
+    width: 72px; height: 72px;
+    border: 1.5px solid var(--ink);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.5rem;
+    background: white;
+    flex-shrink: 0;
+  }
+  .preview-name {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: #555;
+    line-height: 1.5;
+  }
+
+  /* Middle column — slider */
+  .mid-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem 0;
+    border-right: 1.5px solid var(--ink);
+    gap: 1rem;
+  }
+  .mid-label {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    writing-mode: vertical-rl;
+    text-transform: uppercase;
+    color: #888;
+  }
+  input[type=range].alpha-slider {
+    -webkit-appearance: none;
+    writing-mode: vertical-lr;
+    direction: rtl;
+    width: 36px;
+    height: 200px;
+    background: transparent;
+    cursor: none;
+  }
+  input[type=range].alpha-slider::-webkit-slider-runnable-track {
+    width: 2px;
+    background: var(--ink);
+  }
+  input[type=range].alpha-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px; height: 22px;
+    background: var(--accent);
+    border: 2px solid var(--ink);
+    border-radius: 50%;
+    margin-left: -10px;
+  }
+  .alpha-val {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--accent);
+  }
+
+  /* ── Result ── */
+  .result-section {
+    padding: 3rem 4rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    border-bottom: 1.5px solid var(--ink);
+  }
+
+  .blend-btn {
+    display: inline-flex; align-items: center; gap: 0.6rem;
+    padding: 1rem 2.5rem;
+    background: var(--ink); color: var(--paper);
+    font-family: var(--display);
+    font-weight: 700; font-size: 1rem;
+    letter-spacing: 0.02em;
+    border: none; cursor: none;
+    transition: transform 0.15s, background 0.2s;
+    margin-top: 1.5rem;
+  }
+  .blend-btn:hover { background: var(--accent); transform: translate(-2px, -2px); }
+  .blend-btn:active { transform: translate(0,0); }
+  .blend-btn:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+
+  .output-wrap {
+    display: flex; flex-direction: column; gap: 1.2rem;
+  }
+  .output-label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+  }
+
+  #result-canvas-wrap {
+    position: relative;
+    width: 288px; height: 288px;   /* 72*4 */
+    border: 1.5px solid var(--ink);
+    background: white;
+    overflow: hidden;
+  }
+  #result-canvas {
+    width: 100%; height: 100%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: block;
+  }
+  .canvas-overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 0.8rem; color: #aaa;
+    background: white;
+    transition: opacity 0.3s;
+  }
+  .canvas-overlay.hidden { opacity: 0; pointer-events: none; }
+
+  .download-btn {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.6rem 1.4rem;
+    border: 1.5px solid var(--ink);
+    background: transparent;
+    font-family: var(--mono); font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    cursor: none;
+    transition: all 0.15s;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .download-btn:hover { background: var(--ink); color: var(--paper); }
+
+  /* ── Strip ── */
+  .strip-section {
+    padding: 2.5rem 4rem;
+    border-bottom: 1.5px solid var(--ink);
+  }
+  .strip-label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1.5rem;
+  }
+  .strip-row {
+    display: flex; gap: 0; align-items: flex-end;
+  }
+  .strip-item {
+    display: flex; flex-direction: column; align-items: center;
+    flex: 1;
+  }
+  .strip-item canvas {
+    width: 100%; aspect-ratio: 1;
+    border-right: 1px solid #ddd;
+    display: block;
+    image-rendering: pixelated;
+  }
+  .strip-item:last-child canvas { border-right: none; }
+  .strip-alpha {
+    font-family: var(--mono); font-size: 0.55rem; color: #aaa;
+    margin-top: 4px;
+  }
+
+  /* ── Status bar ── */
+  #status {
+    font-family: var(--mono); font-size: 0.75rem;
+    padding: 0.6rem 4rem;
+    border-bottom: 1.5px solid var(--ink);
+    color: #555;
+    min-height: 2.4rem;
+    display: flex; align-items: center; gap: 0.8rem;
+  }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #ccc; flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .status-dot.ready { background: #2ecc71; }
+  .status-dot.loading { background: var(--gold); animation: pulse 0.8s infinite; }
+  .status-dot.error { background: var(--accent); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ── Footer ── */
+  footer {
+    padding: 1.5rem 4rem;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  footer span { font-family: var(--mono); font-size: 0.7rem; color: #888; }
+
+  /* ── Loading screen ── */
+  #loading-screen {
+    position: fixed; inset: 0;
+    background: var(--ink);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 1000;
+    transition: opacity 0.5s;
+  }
+  #loading-screen.fade { opacity: 0; pointer-events: none; }
+  .load-title {
+    font-family: var(--display); font-weight: 800; font-size: 3rem;
+    color: var(--paper); letter-spacing: -0.04em;
+    margin-bottom: 0.5rem;
+  }
+  .load-sub {
+    font-family: var(--mono); font-size: 0.75rem;
+    color: #888; letter-spacing: 0.1em; margin-bottom: 2.5rem;
+  }
+  .load-bar-wrap {
+    width: 280px; height: 2px;
+    background: #333; position: relative; overflow: hidden;
+  }
+  .load-bar {
+    height: 100%;
+    background: var(--accent);
+    width: 0%; transition: width 0.4s ease;
+  }
+  .load-msg {
+    font-family: var(--mono); font-size: 0.72rem;
+    color: #666; margin-top: 1rem;
+    min-height: 1.2rem;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    header, .hero, .workspace, .result-section, .strip-section,
+    #status, footer { padding-left: 1.5rem; padding-right: 1.5rem; }
+    .hero { grid-template-columns: 1fr; padding-top: 3rem; }
+    .workspace { grid-template-columns: 1fr; }
+    .panel { border-right: none; border-bottom: 1.5px solid var(--ink); }
+    .mid-col { flex-direction: row; padding: 1rem; border-right: none; border-bottom: 1.5px solid var(--ink); }
+    input[type=range].alpha-slider { writing-mode: horizontal-tb; direction: ltr; width: 200px; height: 36px; }
+    .result-section { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loading-screen">
+  <div class="load-title">EmojiBlend</div>
+  <div class="load-sub">TEAM PPG · CIT-U · 2026</div>
+  <div class="load-bar-wrap"><div class="load-bar" id="load-bar"></div></div>
+  <div class="load-msg" id="load-msg">Initializing TensorFlow.js…</div>
+</div>
+
+<!-- Cursor -->
+<div id="cursor"></div>
+<div id="cursor-ring"></div>
+
+<div class="page">
+  <!-- Header -->
+  <header>
+    <div class="logo">Emoji<span>Blend</span></div>
+    <div style="display:flex;gap:1rem;align-items:center;">
+      <span style="font-family:var(--mono);font-size:0.7rem;color:#888;">VAE · LATENT INTERPOLATION</span>
+      <div class="tag">TEAM PPG</div>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div>
+      <h1 class="hero-title">
+        <span class="line1">FUSE</span><br>
+        <span class="line2">ANY</span><br>
+        <span class="line3">EMOJI</span>
+      </h1>
+    </div>
+    <p class="hero-desc">
+      Pick two emoji. Drag the slider. Watch a <strong>Variational Autoencoder</strong>
+      blend them through a learned latent space — producing something that never existed before.
+      <br><br>
+      Trained from scratch on 3,200+ OpenMoji images. Inference runs entirely in your browser.
+    </p>
+  </section>
+
+  <!-- Status -->
+  <div id="status">
+    <div class="status-dot loading" id="status-dot"></div>
+    <span id="status-text">Loading VAE models…</span>
+  </div>
+
+  <!-- Workspace -->
+  <section class="workspace">
+    <!-- Panel A -->
+    <div class="panel" id="panel-a">
+      <div class="panel-label">① Select Emoji A</div>
+      <div class="search-wrap">
+        <input type="text" id="search-a" placeholder="Search emoji…" autocomplete="off"/>
+      </div>
+      <div class="emoji-grid" id="grid-a"></div>
+      <div class="selected-preview">
+        <div class="preview-emoji" id="preview-a">😀</div>
+        <div class="preview-name" id="name-a">grinning face<br><span style="color:#aaa">Select from grid above</span></div>
+      </div>
+    </div>
+
+    <!-- Mid slider -->
+    <div class="mid-col">
+      <div class="mid-label">Blend α</div>
+      <input type="range" class="alpha-slider" id="alpha-slider"
+             min="0" max="100" value="50" step="1"/>
+      <div class="alpha-val" id="alpha-display">0.50</div>
+    </div>
+
+    <!-- Panel B -->
+    <div class="panel" id="panel-b">
+      <div class="panel-label">② Select Emoji B</div>
+      <div class="search-wrap">
+        <input type="text" id="search-b" placeholder="Search emoji…" autocomplete="off"/>
+      </div>
+      <div class="emoji-grid" id="grid-b"></div>
+      <div class="selected-preview">
+        <div class="preview-emoji" id="preview-b">🔥</div>
+        <div class="preview-name" id="name-b">fire<br><span style="color:#aaa">Select from grid above</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Result -->
+  <section class="result-section">
+    <div>
+      <div class="output-label">③ Generate Blend</div>
+      <p style="font-size:0.9rem;color:#666;margin-top:0.5rem;line-height:1.6;">
+        The VAE encodes both emoji into 256-dim latent vectors,
+        blends them via <em>SLERP</em> at ratio α, then decodes
+        the interpolated vector into a new image.
+      </p>
+      <button class="blend-btn" id="blend-btn" disabled>
+        <span>✦</span> Blend Emojis
+      </button>
+      <div style="margin-top:1rem;">
+        <button class="blend-btn" id="strip-btn" disabled
+                style="background:transparent;color:var(--ink);border:1.5px solid var(--ink);font-size:0.85rem;padding:0.7rem 1.5rem;">
+          Generate Full Strip
+        </button>
+      </div>
+    </div>
+    <div class="output-wrap">
+      <div class="output-label">Result</div>
+      <div id="result-canvas-wrap">
+        <canvas id="result-canvas" width="72" height="72"></canvas>
+        <div class="canvas-overlay" id="canvas-overlay">awaiting blend…</div>
+      </div>
+      <a class="download-btn" id="download-btn" style="display:none;" download="emojiblend.png">
+        ↓ Download PNG
+      </a>
+    </div>
+  </section>
+
+  <!-- Strip -->
+  <section class="strip-section">
+    <div class="strip-label">Interpolation Strip — α: 0.0 → 1.0</div>
+    <div class="strip-row" id="strip-row">
+      <div style="font-family:var(--mono);font-size:0.75rem;color:#bbb;padding:1rem 0;">
+        Generate a strip above to see the full latent space journey.
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <span>EmojiBlend · Team PPG · CIT-U 2026</span>
+    <span>VAE trained on OpenMoji (CC BY-SA 4.0) · TensorFlow.js</span>
+  </footer>
+</div>
+
+<script>
+// ── Cursor ───────────────────────────────────────────────────────────────────
+const cursor     = document.getElementById('cursor');
+const cursorRing = document.getElementById('cursor-ring');
+let mx = 0, my = 0, rx = 0, ry = 0;
+document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+;(function animCursor() {
+  rx += (mx - rx) * 0.18; ry += (my - ry) * 0.18;
+  cursor.style.left     = mx + 'px'; cursor.style.top     = my + 'px';
+  cursorRing.style.left = rx + 'px'; cursorRing.style.top = ry + 'px';
+  requestAnimationFrame(animCursor);
+})();
+document.querySelectorAll('button,a,input').forEach(el => {
+  el.addEventListener('mouseenter', () => {
+    cursor.style.transform = 'translate(-50%,-50%) scale(2.5)';
+    cursorRing.style.width = '56px'; cursorRing.style.height = '56px';
+  });
+  el.addEventListener('mouseleave', () => {
+    cursor.style.transform = 'translate(-50%,-50%) scale(1)';
+    cursorRing.style.width = '36px'; cursorRing.style.height = '36px';
+  });
+});
+
+// ── State ────────────────────────────────────────────────────────────────────
+let encoderModel = null, decoderModel = null;
+let emojiIndex   = [];
+let selA = null, selB = null;   // { hexcode, emoji, annotation }
+let zA   = null, zB   = null;   // Float32Array latent vectors
+
+const LATENT_DIM = 256;
+const IMG_SIZE   = 72;
+const CDN = hex => `https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@15.0.0/color/72x72/${hex}.png`;
+
+// ── Status helpers ────────────────────────────────────────────────────────────
+function setStatus(msg, state = 'loading') {
+  document.getElementById('status-text').textContent = msg;
+  const dot = document.getElementById('status-dot');
+  dot.className = 'status-dot ' + state;
+}
+function setLoad(pct, msg) {
+  document.getElementById('load-bar').style.width = pct + '%';
+  document.getElementById('load-msg').textContent = msg;
+}
+
+// ── Load emoji index ──────────────────────────────────────────────────────────
+async function loadEmojiIndex() {
+  setLoad(10, 'Fetching emoji index…');
+  try {
+    const r = await fetch('./emoji_index.json');
+    if (!r.ok) throw new Error('emoji_index.json not found');
+    emojiIndex = await r.json();
+  } catch {
+    // Fallback: hardcoded popular subset for demo
+    emojiIndex = [
+      {hexcode:'1F600',emoji:'😀',annotation:'grinning face'},
+      {hexcode:'1F601',emoji:'😁',annotation:'beaming face with smiling eyes'},
+      {hexcode:'1F602',emoji:'😂',annotation:'face with tears of joy'},
+      {hexcode:'1F923',emoji:'🤣',annotation:'rolling on the floor laughing'},
+      {hexcode:'1F603',emoji:'😃',annotation:'grinning face with big eyes'},
+      {hexcode:'1F604',emoji:'😄',annotation:'grinning face with smiling eyes'},
+      {hexcode:'1F605',emoji:'😅',annotation:'grinning face with sweat'},
+      {hexcode:'1F606',emoji:'😆',annotation:'grinning squinting face'},
+      {hexcode:'1F970',emoji:'🥰',annotation:'smiling face with hearts'},
+      {hexcode:'1F60D',emoji:'😍',annotation:'smiling face with heart-eyes'},
+      {hexcode:'1F618',emoji:'😘',annotation:'face blowing a kiss'},
+      {hexcode:'1F617',emoji:'😗',annotation:'kissing face'},
+      {hexcode:'1F60A',emoji:'😊',annotation:'smiling face with smiling eyes'},
+      {hexcode:'1F642',emoji:'🙂',annotation:'slightly smiling face'},
+      {hexcode:'1F643',emoji:'🙃',annotation:'upside-down face'},
+      {hexcode:'1F60B',emoji:'😋',annotation:'face savoring food'},
+      {hexcode:'1F61C',emoji:'😜',annotation:'winking face with tongue'},
+      {hexcode:'1F917',emoji:'🤗',annotation:'hugging face'},
+      {hexcode:'1F914',emoji:'🤔',annotation:'thinking face'},
+      {hexcode:'1F610',emoji:'😐',annotation:'neutral face'},
+      {hexcode:'1F611',emoji:'😑',annotation:'expressionless face'},
+      {hexcode:'1F62C',emoji:'😬',annotation:'grimacing face'},
+      {hexcode:'1F60F',emoji:'😏',annotation:'smirking face'},
+      {hexcode:'1F612',emoji:'😒',annotation:'unamused face'},
+      {hexcode:'1F644',emoji:'🙄',annotation:'face with rolling eyes'},
+      {hexcode:'1F624',emoji:'😤',annotation:'face with steam from nose'},
+      {hexcode:'1F621',emoji:'😡',annotation:'enraged face'},
+      {hexcode:'1F620',emoji:'😠',annotation:'angry face'},
+      {hexcode:'1F92C',emoji:'🤬',annotation:'face with symbols on mouth'},
+      {hexcode:'1F637',emoji:'😷',annotation:'face with medical mask'},
+      {hexcode:'1F975',emoji:'🥵',annotation:'hot face'},
+      {hexcode:'1F976',emoji:'🥶',annotation:'cold face'},
+      {hexcode:'1F974',emoji:'🥴',annotation:'woozy face'},
+      {hexcode:'1F635',emoji:'😵',annotation:'dizzy face'},
+      {hexcode:'1F92F',emoji:'🤯',annotation:'exploding head'},
+      {hexcode:'1F920',emoji:'🤠',annotation:'cowboy hat face'},
+      {hexcode:'1F973',emoji:'🥳',annotation:'partying face'},
+      {hexcode:'1F60E',emoji:'😎',annotation:'smiling face with sunglasses'},
+      {hexcode:'1F913',emoji:'🤓',annotation:'nerd face'},
+      {hexcode:'1F9D0',emoji:'🧐',annotation:'face with monocle'},
+      {hexcode:'1F615',emoji:'😕',annotation:'confused face'},
+      {hexcode:'1F641',emoji:'🙁',annotation:'slightly frowning face'},
+      {hexcode:'1F97A',emoji:'🥺',annotation:'pleading face'},
+      {hexcode:'1F62D',emoji:'😭',annotation:'loudly crying face'},
+      {hexcode:'1F631',emoji:'😱',annotation:'face screaming in fear'},
+      {hexcode:'1F608',emoji:'😈',annotation:'smiling face with horns'},
+      {hexcode:'1F47B',emoji:'👻',annotation:'ghost'},
+      {hexcode:'1F4A9',emoji:'💩',annotation:'pile of poo'},
+      {hexcode:'1F525',emoji:'🔥',annotation:'fire'},
+      {hexcode:'2764',emoji:'❤️',annotation:'red heart'},
+      {hexcode:'1F49A',emoji:'💚',annotation:'green heart'},
+      {hexcode:'1F499',emoji:'💙',annotation:'blue heart'},
+      {hexcode:'1F48E',emoji:'💎',annotation:'gem stone'},
+      {hexcode:'2B50',emoji:'⭐',annotation:'star'},
+      {hexcode:'1F31F',emoji:'🌟',annotation:'glowing star'},
+      {hexcode:'1F308',emoji:'🌈',annotation:'rainbow'},
+      {hexcode:'2600',emoji:'☀️',annotation:'sun'},
+      {hexcode:'1F319',emoji:'🌙',annotation:'crescent moon'},
+      {hexcode:'26A1',emoji:'⚡',annotation:'lightning'},
+      {hexcode:'1F30A',emoji:'🌊',annotation:'water wave'},
+      {hexcode:'1F334',emoji:'🌴',annotation:'palm tree'},
+      {hexcode:'1F337',emoji:'🌷',annotation:'tulip'},
+      {hexcode:'1F338',emoji:'🌸',annotation:'cherry blossom'},
+      {hexcode:'1F355',emoji:'🍕',annotation:'pizza'},
+      {hexcode:'1F354',emoji:'🍔',annotation:'hamburger'},
+      {hexcode:'1F35C',emoji:'🍜',annotation:'steaming bowl'},
+      {hexcode:'1F363',emoji:'🍣',annotation:'sushi'},
+      {hexcode:'1F370',emoji:'🎂',annotation:'shortcake'},
+      {hexcode:'1F382',emoji:'🎂',annotation:'birthday cake'},
+      {hexcode:'1F36D',emoji:'🍭',annotation:'lollipop'},
+      {hexcode:'2615',emoji:'☕',annotation:'hot beverage'},
+      {hexcode:'1F37A',emoji:'🍺',annotation:'beer mug'},
+      {hexcode:'1F680',emoji:'🚀',annotation:'rocket'},
+      {hexcode:'1F30D',emoji:'🌍',annotation:'globe showing Europe-Africa'},
+      {hexcode:'1F3C6',emoji:'🏆',annotation:'trophy'},
+      {hexcode:'1F3A8',emoji:'🎨',annotation:'artist palette'},
+      {hexcode:'1F3B5',emoji:'🎵',annotation:'musical note'},
+      {hexcode:'1F4DA',emoji:'📚',annotation:'books'},
+      {hexcode:'1F4BB',emoji:'💻',annotation:'laptop'},
+      {hexcode:'1F4F1',emoji:'📱',annotation:'mobile phone'},
+      {hexcode:'1F511',emoji:'🔑',annotation:'key'},
+      {hexcode:'1F52E',emoji:'🔮',annotation:'crystal ball'},
+      {hexcode:'1F9E0',emoji:'🧠',annotation:'brain'},
+      {hexcode:'1F440',emoji:'👀',annotation:'eyes'},
+      {hexcode:'1F4AF',emoji:'💯',annotation:'hundred points'},
+    ];
+  }
+  return emojiIndex;
+}
+
+// ── Load TFJS models ──────────────────────────────────────────────────────────
+async function loadModels() {
+  setLoad(30, 'Loading encoder model…');
+  try {
+    encoderModel = await tf.loadGraphModel('./tfjs_encoder/model.json');
+    setLoad(60, 'Loading decoder model…');
+    decoderModel = await tf.loadGraphModel('./tfjs_decoder/model.json');
+    setLoad(90, 'Warming up models…');
+    // Warm up
+    const dummy = tf.zeros([1, IMG_SIZE, IMG_SIZE, 3]);
+    const zWarm = encoderModel.predict(dummy);
+    const outWarm = decoderModel.predict(zWarm);
+    dummy.dispose(); zWarm.dispose(); outWarm.dispose();
+    return true;
+  } catch (e) {
+    console.warn('TFJS models not found, running in preview mode:', e.message);
+    return false;
+  }
+}
+
+// ── Encode image from URL ─────────────────────────────────────────────────────
+async function encodeEmojiFromURL(hexcode) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      // Draw to canvas, get pixel data
+      const c = document.createElement('canvas');
+      c.width = IMG_SIZE; c.height = IMG_SIZE;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, IMG_SIZE, IMG_SIZE);
+      ctx.drawImage(img, 0, 0, IMG_SIZE, IMG_SIZE);
+      const data = ctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE).data;
+
+      // Normalize to [0,1]
+      const floats = new Float32Array(IMG_SIZE * IMG_SIZE * 3);
+      for (let i = 0; i < IMG_SIZE * IMG_SIZE; i++) {
+        floats[i * 3]     = data[i * 4]     / 255;
+        floats[i * 3 + 1] = data[i * 4 + 1] / 255;
+        floats[i * 3 + 2] = data[i * 4 + 2] / 255;
+      }
+
+      const tensor = tf.tensor4d(floats, [1, IMG_SIZE, IMG_SIZE, 3]);
+      const z = tf.tidy(() => {
+        const out = encoderModel.predict(tensor);
+        // out is z_mean (encoder_zmean model outputs directly)
+        return Array.from(out.dataSync());
+      });
+      tensor.dispose();
+      resolve(z);
+    };
+    img.onerror = () => reject(new Error('Failed to load emoji image'));
+    img.src = CDN(hexcode);
+  });
+}
+
+// ── SLERP ─────────────────────────────────────────────────────────────────────
+function slerp(za, zb, alpha) {
+  // Compute norms
+  let normA = 0, normB = 0;
+  for (let i = 0; i < za.length; i++) { normA += za[i]*za[i]; normB += zb[i]*zb[i]; }
+  normA = Math.sqrt(normA); normB = Math.sqrt(normB);
+
+  // Unit vectors
+  const aHat = za.map(v => v / (normA + 1e-8));
+  const bHat = zb.map(v => v / (normB + 1e-8));
+
+  // Dot product
+  let dot = 0;
+  for (let i = 0; i < aHat.length; i++) dot += aHat[i] * bHat[i];
+  dot = Math.max(-1, Math.min(1, dot));
+  const theta = Math.acos(dot);
+
+  if (Math.abs(theta) < 1e-6) {
+    // Near-identical: linear fallback
+    return za.map((v, i) => (1 - alpha) * v + alpha * zb[i]);
+  }
+
+  const sinT = Math.sin(theta);
+  const wA = Math.sin((1 - alpha) * theta) / sinT;
+  const wB = Math.sin(alpha * theta) / sinT;
+  return za.map((v, i) => wA * v + wB * zb[i]);
+}
+
+// ── Decode latent → canvas ────────────────────────────────────────────────────
+async function decodeToCanvas(z, canvas) {
+  const zTensor = tf.tensor2d([z], [1, LATENT_DIM]);
+  const outTensor = decoderModel.predict(zTensor);
+  const data = await outTensor.data();
+  zTensor.dispose(); outTensor.dispose();
+
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.createImageData(IMG_SIZE, IMG_SIZE);
+  for (let i = 0; i < IMG_SIZE * IMG_SIZE; i++) {
+    imgData.data[i * 4]     = Math.round(data[i * 3]     * 255);
+    imgData.data[i * 4 + 1] = Math.round(data[i * 3 + 1] * 255);
+    imgData.data[i * 4 + 2] = Math.round(data[i * 3 + 2] * 255);
+    imgData.data[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
+// ── Build emoji grids ─────────────────────────────────────────────────────────
+function buildGrid(gridId, searchId, previewId, nameId, onSelect) {
+  const grid   = document.getElementById(gridId);
+  const search = document.getElementById(searchId);
+
+  function render(query) {
+    const q = query.toLowerCase();
+    const filtered = q
+      ? emojiIndex.filter(e => e.annotation.toLowerCase().includes(q)).slice(0, 60)
+      : emojiIndex.slice(0, 60);
+
+    grid.innerHTML = '';
+    filtered.forEach(e => {
+      const btn = document.createElement('button');
+      btn.className = 'emoji-btn';
+      btn.textContent = e.emoji;
+      btn.title = e.annotation;
+      btn.dataset.hexcode = e.hexcode;
+      btn.addEventListener('click', () => {
+        grid.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        document.getElementById(previewId).textContent = e.emoji;
+        document.getElementById(nameId).innerHTML =
+          `${e.annotation}<br><span style="color:#aaa;font-family:var(--mono);font-size:0.7rem;">${e.hexcode}</span>`;
+        onSelect(e);
+      });
+      grid.appendChild(btn);
+    });
+  }
+
+  render('');
+  search.addEventListener('input', e => render(e.target.value));
+}
+
+// ── Check if models are available ─────────────────────────────────────────────
+// When models aren't loaded (preview mode), show mock output from original emoji
+async function blendPreviewMode(alpha) {
+  // In preview mode, show a CSS blend of the two emoji in the result canvas
+  const ctx = document.getElementById('result-canvas').getContext('2d');
+  const overlay = document.getElementById('canvas-overlay');
+
+  ctx.clearRect(0, 0, 72, 72);
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, 72, 72);
+
+  if (!selA || !selB) return;
+
+  // Load both images and composite
+  const loadImg = (hex) => new Promise(res => {
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    img.onload = () => res(img);
+    img.onerror = () => res(null);
+    img.src = CDN(hex);
+  });
+
+  const [imgA, imgB] = await Promise.all([loadImg(selA.hexcode), loadImg(selB.hexcode)]);
+  ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 72, 72);
+  if (imgA) { ctx.globalAlpha = 1 - alpha; ctx.drawImage(imgA, 0, 0, 72, 72); }
+  if (imgB) { ctx.globalAlpha = alpha;     ctx.drawImage(imgB, 0, 0, 72, 72); }
+  ctx.globalAlpha = 1;
+  overlay.classList.add('hidden');
+  updateDownload();
+}
+
+// ── Download helper ───────────────────────────────────────────────────────────
+function updateDownload() {
+  const canvas = document.getElementById('result-canvas');
+  const btn    = document.getElementById('download-btn');
+  btn.href  = canvas.toDataURL('image/png');
+  btn.style.display = 'inline-flex';
+}
+
+// ── Main blend ────────────────────────────────────────────────────────────────
+async function doBlend() {
+  if (!selA || !selB) { setStatus('Select both emoji first.', 'error'); return; }
+
+  const alpha = parseInt(document.getElementById('alpha-slider').value) / 100;
+  const blendBtn = document.getElementById('blend-btn');
+  blendBtn.disabled = true;
+  setStatus('Encoding emoji A…', 'loading');
+
+  if (!encoderModel || !decoderModel) {
+    setStatus('Preview mode (VAE not loaded) — showing pixel blend', 'loading');
+    await blendPreviewMode(alpha);
+    setStatus('Preview blend shown. Load TFJS models for true VAE output.', 'ready');
+    blendBtn.disabled = false;
+    return;
+  }
+
+  try {
+    if (!zA) {
+      setStatus(`Encoding ${selA.emoji} ${selA.annotation}…`, 'loading');
+      zA = await encodeEmojiFromURL(selA.hexcode);
+    }
+    if (!zB) {
+      setStatus(`Encoding ${selB.emoji} ${selB.annotation}…`, 'loading');
+      zB = await encodeEmojiFromURL(selB.hexcode);
+    }
+
+    setStatus('Blending in latent space (SLERP)…', 'loading');
+    const zBlend = slerp(zA, zB, alpha);
+
+    setStatus('Decoding…', 'loading');
+    const canvas = document.getElementById('result-canvas');
+    await decodeToCanvas(zBlend, canvas);
+
+    document.getElementById('canvas-overlay').classList.add('hidden');
+    updateDownload();
+    setStatus(`✦ Blend complete — α=${alpha.toFixed(2)}  |  ${selA.emoji} + ${selB.emoji}`, 'ready');
+  } catch (e) {
+    setStatus('Error: ' + e.message, 'error');
+    console.error(e);
+  }
+  blendBtn.disabled = false;
+}
+
+// ── Generate strip ────────────────────────────────────────────────────────────
+async function doStrip() {
+  if (!selA || !selB) { setStatus('Select both emoji first.', 'error'); return; }
+
+  const STEPS = 9;
+  const row = document.getElementById('strip-row');
+  row.innerHTML = '';
+  const stripBtn = document.getElementById('strip-btn');
+  stripBtn.disabled = true;
+
+  // Ensure latents are encoded
+  if (!encoderModel) {
+    // Preview mode strip
+    const alphas = Array.from({length: STEPS}, (_, i) => i / (STEPS - 1));
+    for (const a of alphas) {
+      const item = document.createElement('div');
+      item.className = 'strip-item';
+      const c = document.createElement('canvas');
+      c.width = 72; c.height = 72;
+      item.appendChild(c);
+      const lbl = document.createElement('div');
+      lbl.className = 'strip-alpha';
+      lbl.textContent = a.toFixed(2);
+      item.appendChild(lbl);
+      row.appendChild(item);
+
+      // Pixel blend
+      const loadImg = (hex) => new Promise(res => {
+        const img = new Image(); img.crossOrigin = 'anonymous';
+        img.onload = () => res(img); img.onerror = () => res(null);
+        img.src = CDN(hex);
+      });
+      const [imgA, imgB] = await Promise.all([loadImg(selA.hexcode), loadImg(selB.hexcode)]);
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = 'white'; ctx.fillRect(0,0,72,72);
+      if (imgA) { ctx.globalAlpha = 1-a; ctx.drawImage(imgA,0,0,72,72); }
+      if (imgB) { ctx.globalAlpha = a;   ctx.drawImage(imgB,0,0,72,72); }
+      ctx.globalAlpha = 1;
+    }
+    stripBtn.disabled = false;
+    return;
+  }
+
+  try {
+    if (!zA) { setStatus('Encoding A…','loading'); zA = await encodeEmojiFromURL(selA.hexcode); }
+    if (!zB) { setStatus('Encoding B…','loading'); zB = await encodeEmojiFromURL(selB.hexcode); }
+
+    const alphas = Array.from({length: STEPS}, (_, i) => i / (STEPS - 1));
+    for (let i = 0; i < alphas.length; i++) {
+      const a = alphas[i];
+      setStatus(`Generating strip frame ${i+1}/${STEPS}…`, 'loading');
+
+      const item = document.createElement('div');
+      item.className = 'strip-item';
+      const c = document.createElement('canvas');
+      c.width = 72; c.height = 72;
+      item.appendChild(c);
+      const lbl = document.createElement('div');
+      lbl.className = 'strip-alpha';
+      lbl.textContent = a.toFixed(2);
+      item.appendChild(lbl);
+      row.appendChild(item);
+
+      const zBlend = slerp(zA, zB, a);
+      await decodeToCanvas(zBlend, c);
+    }
+    setStatus(`✦ Strip complete — ${STEPS} steps from ${selA.emoji} → ${selB.emoji}`, 'ready');
+  } catch (e) {
+    setStatus('Strip error: ' + e.message, 'error');
+  }
+  stripBtn.disabled = false;
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  const [index, modelsLoaded] = await Promise.all([
+    loadEmojiIndex(),
+    loadModels()
+  ]);
+
+  setLoad(100, modelsLoaded ? 'Models ready!' : 'Preview mode — place TFJS models to enable VAE');
+
+  // Build grids
+  buildGrid('grid-a', 'search-a', 'preview-a', 'name-a', (e) => {
+    selA = e; zA = null;   // reset cached latent when selection changes
+    checkReady();
+  });
+  buildGrid('grid-b', 'search-b', 'preview-b', 'name-b', (e) => {
+    selB = e; zB = null;
+    checkReady();
+  });
+
+  // Slider
+  document.getElementById('alpha-slider').addEventListener('input', e => {
+    document.getElementById('alpha-display').textContent = (e.target.value / 100).toFixed(2);
+  });
+
+  // Buttons
+  document.getElementById('blend-btn').addEventListener('click', doBlend);
+  document.getElementById('strip-btn').addEventListener('click', doStrip);
+
+  // Set status
+  if (modelsLoaded) {
+    setStatus('✦ VAE models loaded — select two emoji and blend', 'ready');
+  } else {
+    setStatus('Preview mode — place tfjs_encoder/ and tfjs_decoder/ folders to enable VAE inference', 'loading');
+  }
+
+  // Hide loading screen
+  setTimeout(() => {
+    const ls = document.getElementById('loading-screen');
+    ls.classList.add('fade');
+    setTimeout(() => ls.remove(), 600);
+  }, modelsLoaded ? 800 : 1200);
+}
+
+function checkReady() {
+  const ready = selA && selB;
+  document.getElementById('blend-btn').disabled = !ready;
+  document.getElementById('strip-btn').disabled = !ready;
+}
+
+init();
+</script>
+</body>
+</html>
